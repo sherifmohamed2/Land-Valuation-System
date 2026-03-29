@@ -292,6 +292,3 @@ docker run -d -p 8000:8000 --name land-valuation land-valuation-api
 ```
 
 The image runs `uvicorn app.main:app` on port **8000**. Ensure the container image includes `data/land_valuation.db` (copied with `COPY . .` in the bundled `dockerfile`) or mount a volume with a seeded database if you customize the layout.
-
-
-This README reflects the **current** codebase behavior. When Stage 2 endpoints are wired to `ValuationService` and related services, update the Stage 2 section and `/health` messaging to match.
