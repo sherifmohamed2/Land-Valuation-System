@@ -1,14 +1,64 @@
-# Land Valuation System — Market Method
+# Land Valuation System
 
-A production-oriented **land valuation** API built around the **Market Method**. The system is split into two conceptual stages:
+A production-oriented **land valuation** API built around the Market Method principles.
 
-1. **Stage 1 (implemented):** From a pool of historical land transactions, automatically select up to **five** benchmark parcels using five parallel selection rules, tiebreaker scoring, validation, and persistence.
-2. **Stage 2 (designed, not executed via HTTP):** Comparable filtering, multi-factor scoring, and pricing math are **modeled in code** (`app/services/valuation/`, related models and repos). The Stage 2 REST endpoints return **501 Not Implemented** until wired to that logic.
+## AI Benchmark Mode (feature/ai-valuation-engine)
+
+This branch introduces a **Hybrid AI approach** to the core land valuation system. 
+
+1. **Stage 1 (Implemented):** Replaces rigid rule-based segmentation with **K-Means Clustering** to dynamically discover market segments and select representative comparables.
+2. **Stage 2 (Design Status Only):** The execution endpoints for comparable scoring and property valuation (`/valuations`) remain unbuilt and will return **501 Not Implemented**. Current documentation regarding Stage 2 serves purely as a design blueprint.
+
+### AI Selector Behavior (`app/services/ai/cluster_benchmark_selector.py`)
+When AI mode is enabled, the pipeline executes the following logic:
+- **Filtering:** Uses the identical clean pool as the legacy system (`is_cleaned=False`, `is_outlier=False`).
+- **Feature Set:** Feeds numeric features (`area_sqm`, `road_width_m`, `price_per_sqm`, `price_percentile`) into the algorithm.
+- **Preprocessing:** Applies SimpleImputer (median strategy) and StandardScaler to normalize feature distributions.
+- **Clustering:** Runs Scikit-Learn's K-Means (`n_clusters=AI_N_CLUSTERS`, default 5).
+- **Slot Mapping:** Sorts cluster centroids by mean price to map clusters to the 5 distinct benchmark slots (`secondary`, `market_average`, `large_dev`, `emerging`, `prime`).
+- **Selection:** Finds the single transaction closest to each cluster's centroid (Euclidean distance) to serve as that segment's benchmark.
+- **Fallback:** If there are fewer clean records than `AI_N_CLUSTERS`, the module safely aborts and returns `None` for all slots.
+
+### Configuration Toggles (`app/core/config.py`)
+You can control the AI engine via the following settings:
+- `USE_AI_BENCHMARK_SELECTION` (bool): Set to `True` (default on this branch) to run the K-Means selector. Set to `False` to transparently fall back to the legacy rule-based system.
+- `AI_N_CLUSTERS` (int): The number of statistical clusters to discover. Defaults to `5`. Modifying this will change the topological mapping structure and may require code updates to `_map_clusters_to_slots`.
+
+### Added API Response Fields
+In AI mode, benchmark run results (`POST /api/v1/benchmarks/run`) will inject new AI provenance metadata directly into the JSON.
+- `selection_method`: Indicates whether the algorithm used `"ai_kmeans"` or `"rule_based"`.
+- `cluster_metadata`: Contains mathematical tracking for auditability (`cluster_id`, `cluster_size`, `centroid_distance`).
+
+**Example JSON Response:**
+```json
+{
+  "market_average": {
+    "benchmark_type": "market_average",
+    "land_transaction_id": 412,
+    "selection_method": "ai_kmeans",
+    "cluster_metadata": {
+      "cluster_id": 2,
+      "cluster_size": 45,
+      "centroid_distance": 0.1245
+    }
+  }
+}
+```
+
+### Duplicate-District Post-Selection Handling
+The system enforces district diversity. If the AI selector mathematically outputs two centroid transactions in the same district, the `BenchmarkValidationService` will trigger conflict resolution. 
+- **AI Fallback Strategy:** To preserve the mathematical integrity of the clusters, the validator explicitly falls back to utilizing the **rule-based selectors** to re-pick the lower-priority benchmark. This guarantees deterministic behavior while preventing duplicate districts.
+
+### Schema Compatibility & Migration
+This branch introduces new schema fields (`selection_method`, `cluster_metadata_json`) to the `benchmark_results` table. 
+- **Zero-Downtime Migration:** The SQLite engine inside `app/core/database.py` utilizes **startup-safe schema patching**. When you start the API, the system automatically runs `ALTER TABLE` try-catch blocks to append these columns to existing installations. 
+- **User Action:** No manual migration or data-wipe is required! You can safely boot the branch using your existing `data/land_valuation.db`.
 
 ---
 
 ## Table of contents
 
+- [AI Benchmark Mode (feature/ai-valuation-engine)](#ai-benchmark-mode-featureai-valuation-engine)
 - [High-level architecture](#high-level-architecture)
 - [Repository layout](#repository-layout)
 - [Runtime and application lifecycle](#runtime-and-application-lifecycle)
@@ -183,18 +233,22 @@ On failure, the run is marked `failed`, `notes` store the error, and the excepti
 
 ---
 
-## Stage 2: valuation (design status)
+## Stage 2: AI Valuation Engine (Future Design Blueprint)
 
-The following modules document and partially implement the **intended** Stage 2 pipeline (orchestration stub raises `NotImplementedError`):
+Because Stage 1 relies on Unsupervised Learning (Clustering) to group data, the plan for Stage 2 is to augment the point-value stubs with a **Supervised Machine Learning Model**.
 
-- `app/services/valuation/valuation_service.py` — Planned orchestration (subject load, latest benchmarks, comparables, filter, score, price, persist).
-- `app/services/valuation/comparable_filter_service.py`, `factor_scoring_service.py`, `pricing_engine.py` — Designed algorithms aligned with Market Method scoring and point-value math.
+**No code for Stage 2 is implemented in this branch**, but the architectural blueprint is as follows:
 
-**HTTP surface today:**
+- **Model Type**: XGBoost Regressor (Gradient Boosting).
+- **Features (Input)**: Subject parcel attributes (Area, Road Width, Lat/Lng, Zoning) plus the contextual features of the 5 dynamically selected benchmarks.
+- **Output**: 
+  - `estimated_price_per_sqm`
+  - `estimated_total_value`
+  - `confidence_band` (Derived from model variance)
+- **Explainability**: SHAP (SHapley Additive exPlanations) values will be returned per-prediction to mathematically justify *why* the AI chose the price it did (e.g. "+5% because of prime zoning vs market average").
+- **API Surface**: `POST /api/v1/valuations/{subject_id}/run` (Currently returns 501 Not Implemented)
 
-- `GET/POST /api/v1/subjects*`, `POST/GET /api/v1/valuations/{subject_id}/*` → **`Stage2NotImplementedError` (501)** with a pointer to `app/services/valuation/`.
-
-**Available for Stage 2 configuration:**
+**Available for Stage 2 configuration (legacy system):**
 
 - `GET /api/v1/configs/factors` — Lists factor definitions and checks total weight (expected near 1.0).
 
@@ -282,6 +336,16 @@ pytest tests/ -v
 - **`tests/unit/`** — Normalization, outliers, each selector, tiebreaker scoring, validation (mostly Pandas-level, no full app).
 - **`tests/integration/`** — Async HTTP client against the app with isolated database setup (`pytest.ini` sets `asyncio_mode = auto`).
 
+### AI Branch Testing
+The AI branch includes dedicated coverage for K-Means logic and metadata surfacing:
+- `tests/unit/test_cluster_benchmark_selector.py` (Tests AI logic, scores, and fallback states)
+- `tests/integration/test_ai_benchmark_run.py` (Asserts live database JSON payloads and 201 behavior)
+
+**Test the AI mode quickly:**
+```bash
+pytest tests/unit/test_cluster_benchmark_selector.py tests/integration/test_ai_benchmark_run.py -v
+```
+
 ---
 
 ## Docker
@@ -292,6 +356,3 @@ docker run -d -p 8000:8000 --name land-valuation land-valuation-api
 ```
 
 The image runs `uvicorn app.main:app` on port **8000**. Ensure the container image includes `data/land_valuation.db` (copied with `COPY . .` in the bundled `dockerfile`) or mount a volume with a seeded database if you customize the layout.
-
-
-This README reflects the **current** codebase behavior. When Stage 2 endpoints are wired to `ValuationService` and related services, update the Stage 2 section and `/health` messaging to match.
