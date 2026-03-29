@@ -228,6 +228,38 @@ Interactive docs: `http://localhost:8000/docs`
 
 ---
 
+## Local run (without Docker)
+
+**Prerequisites:** Python 3.9+ (Python 3.11 is used in the Dockerfile).
+
+### 1. Create and activate a virtual environment
+It is highly recommended to install dependencies inside an isolated virtual environment.
+```bash
+# Create the virtual environment
+python3 -m venv .venv
+
+# Activate (macOS/Linux)
+source .venv/bin/activate
+
+# Activate (Windows)
+.venv\Scripts\activate
+```
+
+### 2. Install dependencies
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### 3. Start the server
+```bash
+uvicorn app.main:app --reload
+```
+The API will start at `http://localhost:8000`.
+Navigate to **[http://localhost:8000/docs](http://localhost:8000/docs)** to use the interactive Swagger UI and test the API endpoints.
+
+---
+
 ## Pre-seeded data and regeneration
 
 - The repository includes a **pre-built** `data/land_valuation.db` so you can call the API immediately.
@@ -260,19 +292,5 @@ docker run -d -p 8000:8000 --name land-valuation land-valuation-api
 
 The image runs `uvicorn app.main:app` on port **8000**. Ensure the container image includes `data/land_valuation.db` (copied with `COPY . .` in the bundled `dockerfile`) or mount a volume with a seeded database if you customize the layout.
 
----
-
-## Local run (without Docker)
-
-**Prerequisites:** Python 3.11+ recommended (Dockerfile uses 3.11).
-
-```bash
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
-
-Open `http://localhost:8000/docs` for Swagger UI.
-
----
 
 This README reflects the **current** codebase behavior. When Stage 2 endpoints are wired to `ValuationService` and related services, update the Stage 2 section and `/health` messaging to match.
