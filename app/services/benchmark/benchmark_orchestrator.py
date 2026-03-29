@@ -39,6 +39,7 @@ from app.services.benchmark.large_dev_selector import LargeDevSelector
 from app.services.benchmark.emerging_selector import EmergingSelector
 from app.services.benchmark.benchmark_validation_service import BenchmarkValidationService
 from app.services.audit.audit_service import AuditService
+from app.services.ai.cluster_benchmark_selector import ClusterBenchmarkSelector
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +157,10 @@ async def run_benchmark_selection(
         # --- Load rising districts ---
         rising_districts = await _load_rising_districts(session)
 
-        # --- Run all 5 selectors ---
+        # --- Run selectors: AI (K-Means) or rule-based depending on config ---
+        benchmarks: dict[str, Optional[dict]] = {}
+        
+        # Rule-based selectors are always instantiated so they can serve as fallbacks for duplicate conflict resolution
         selectors = {
             "market_average": MarketAverageSelector(settings),
             "prime": PrimeSelector(settings),
@@ -165,15 +169,22 @@ async def run_benchmark_selection(
             "emerging": EmergingSelector(settings),
         }
 
-        # Each selector reads the full ``df`` (same medians/percentiles as persisted).
-        benchmarks: dict[str, Optional[dict]] = {}
-        for btype, selector in selectors.items():
-            if btype == "emerging":
-                result = selector.select(df, rising_districts=rising_districts)
-            else:
-                result = selector.select(df)
-            benchmarks[btype] = result
-            logger.info(f"[{run_uuid}] {btype}: {'found' if result else 'NOT FOUND'}")
+        if settings.USE_AI_BENCHMARK_SELECTION:
+            logger.info(f"[{run_uuid}] Using AI K-Means benchmark selection (n_clusters={settings.AI_N_CLUSTERS}).")
+            ai_selector = ClusterBenchmarkSelector(settings)
+            benchmarks = ai_selector.select(df)
+            for btype, result in benchmarks.items():
+                logger.info(f"[{run_uuid}] {btype}: {'found (AI)' if result else 'NOT FOUND (AI)'}")
+        else:
+            logger.info(f"[{run_uuid}] Using rule-based benchmark selection.")
+            # Each selector reads the full ``df`` (same medians/percentiles as persisted).
+            for btype, selector in selectors.items():
+                if btype == "emerging":
+                    result = selector.select(df, rising_districts=rising_districts)
+                else:
+                    result = selector.select(df)
+                benchmarks[btype] = result
+                logger.info(f"[{run_uuid}] {btype}: {'found' if result else 'NOT FOUND'}")
 
         # --- Resolve duplicate districts (re-pick lower-priority benchmarks when possible) ---
         validator = BenchmarkValidationService(settings)
@@ -221,6 +232,16 @@ async def run_benchmark_selection(
                 price_per_sqm=bm_data.get("price_per_sqm") if bm_data else None,
                 selection_score=bm_data.get("selection_score") if bm_data else None,
                 score_breakdown_json=bm_data.get("score_breakdown") if bm_data else None,
+                selection_method=bm_data.get("selection_method", "rule_based") if bm_data else None,
+                cluster_metadata_json=(
+                    {
+                        "cluster_id": bm_data.get("cluster_id"),
+                        "cluster_size": bm_data.get("cluster_size"),
+                        "centroid_distance": bm_data.get("centroid_distance"),
+                    }
+                    if bm_data and bm_data.get("selection_method") == "ai_kmeans"
+                    else None
+                ),
                 validation_flags_json=validation,
                 candidate_pool_size=bm_data.get("candidate_pool_size") if bm_data else None,
                 created_at=completed_at,
