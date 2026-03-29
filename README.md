@@ -18,6 +18,7 @@ A production-oriented **land valuation** API built around the **Market Method**.
 - [Stage 2: valuation (design status)](#stage-2-valuation-design-status)
 - [REST API](#rest-api)
 - [Background scheduling](#background-scheduling)
+- [Local run (without Docker)](#local-run-without-docker)
 - [Pre-seeded data and regeneration](#pre-seeded-data-and-regeneration)
 - [Testing](#testing)
 - [Docker](#docker)
