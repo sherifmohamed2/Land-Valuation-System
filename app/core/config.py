@@ -57,6 +57,10 @@ class Settings(BaseSettings):
     VALID_MIN_AREA_DIFF_PCT: float = 0.15
     VALID_MIN_PRICE_DIFF_PCT: float = 0.10
 
+    # AI Benchmark Selection (Stage 1 — K-Means Clustering)
+    USE_AI_BENCHMARK_SELECTION: bool = True
+    AI_N_CLUSTERS: int = 5  # must match number of benchmark slot types
+
     # Scheduler
     BENCHMARK_REFRESH_CRON: str = "0 2 1 * *"
     BENCHMARK_NEW_RECORD_THRESHOLD: int = 50
