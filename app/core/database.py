@@ -20,10 +20,25 @@ class Base(DeclarativeBase):
     pass
 
 
+from sqlalchemy.exc import OperationalError
+from sqlalchemy import text
+import logging
+
 async def create_tables():
     """Create all tables if they don't exist. Safe to call on every startup."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        
+        # Startup-safe schema patching for existing SQLite databases (AI mode columns)
+        try:
+            await conn.execute(text("ALTER TABLE benchmark_results ADD COLUMN selection_method VARCHAR(50) DEFAULT 'rule_based'"))
+        except OperationalError:
+            pass  # Column already exists
+            
+        try:
+            await conn.execute(text("ALTER TABLE benchmark_results ADD COLUMN cluster_metadata_json JSON"))
+        except OperationalError:
+            pass  # Column already exists
 
 
 async def get_db():

@@ -15,6 +15,8 @@ class BenchmarkResultSchema(BaseModel):
     price_per_sqm: Optional[float] = None
     selection_score: Optional[float] = None
     score_breakdown: Optional[dict] = None
+    selection_method: Optional[str] = "rule_based"
+    cluster_metadata: Optional[dict] = None
     assigned_valuation_method: str = "Market Method"
     validation_flags: Optional[dict] = None
     candidate_pool_size: Optional[int] = None

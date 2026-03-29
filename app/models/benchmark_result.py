@@ -24,6 +24,8 @@ class BenchmarkResult(Base):
     price_per_sqm: Mapped[Optional[float]] = mapped_column(Float)
     selection_score: Mapped[Optional[float]] = mapped_column(Float)
     score_breakdown_json: Mapped[Optional[dict]] = mapped_column(JSON)
+    selection_method: Mapped[Optional[str]] = mapped_column(String(50), default="rule_based")
+    cluster_metadata_json: Mapped[Optional[dict]] = mapped_column(JSON)
     assigned_valuation_method: Mapped[str] = mapped_column(String(100), default="Market Method")
     validation_flags_json: Mapped[Optional[dict]] = mapped_column(JSON)
     candidate_pool_size: Mapped[Optional[int]] = mapped_column(Integer)

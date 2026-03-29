@@ -56,6 +56,8 @@ def build_benchmark_run_response(run, results) -> BenchmarkRunResponse:
                 price_per_sqm=r.price_per_sqm,
                 selection_score=r.selection_score,
                 score_breakdown=_parse_json(r.score_breakdown_json),
+                selection_method=r.selection_method or "rule_based",
+                cluster_metadata=_parse_json(r.cluster_metadata_json) if r.cluster_metadata_json else None,
                 assigned_valuation_method=r.assigned_valuation_method,
                 validation_flags=_parse_json(r.validation_flags_json),
                 candidate_pool_size=r.candidate_pool_size,
